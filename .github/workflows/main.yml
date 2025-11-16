@@ -59,7 +59,7 @@ jobs:
           export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           # Set required ABIs (customize if needed)
           for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-            ./build.sh $abi
+            cd build-proot-android && ./build.sh $abi
           done
 
       - name: Upload libproot.so artifacts
