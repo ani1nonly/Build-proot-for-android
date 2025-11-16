@@ -50,7 +50,8 @@ jobs:
         
 
       - name: Make build.sh executable
-        run: chmod +x build-proot-android/build.sh
+        run: cd build-proot-android
+             chmod +x build.sh
 
       - name: Build libproot.so for Android ABIs
         run: |
@@ -58,7 +59,7 @@ jobs:
           export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           # Set required ABIs (customize if needed)
           for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-            build-proot-android/build.sh $abi
+            ./build.sh $abi
           done
 
       - name: Upload libproot.so artifacts
