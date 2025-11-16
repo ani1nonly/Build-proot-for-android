@@ -23,7 +23,7 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git wget python3
+          sudo apt-get install -y build-essential git wget python2
 
       - name: Clone proot-me/proot
         run: |
@@ -37,10 +37,6 @@ jobs:
           rm -rf build-proot-android/proot
           cp -r proot-upstream build-proot-android/proot
 
-      - name: Patch Python 2 except syntax in waf scripts
-        run: |
-          find build-proot-android/build/talloc-2.1.14/third_party/waf/wafadmin/ -type f -name "*.py" -exec sed -i 's/except \(.*\), \(.*\):/except \1 as \2:/g' {} +
-          
       - name: Build multi-ABI, multi-API libproot.so
         run: |
           cd build-proot-android
