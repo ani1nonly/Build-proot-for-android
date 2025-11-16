@@ -1,4 +1,4 @@
-name: Build PROOT for Android
+name: Build Static PROOT for Android arm64
 
 on:
   push:
@@ -17,8 +17,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Set up Python 3
         uses: actions/setup-python@v5
@@ -40,32 +38,26 @@ jobs:
           NDK_VERSION="android-ndk-r23b"
           NDK_ZIP="${NDK_VERSION}-linux.zip"
           NDK_URL="https://dl.google.com/android/repository/${NDK_ZIP}"
-          wget -q $NDK_URL
-          unzip -q $NDK_ZIP
-          mv $NDK_VERSION $ANDROID_NDK_HOME
-          
-      - name: Clone build-proot-android
-        run: git clone https://github.com/green-green-avk/build-proot-android.git
-  
-        
+          wget -q "$NDK_URL"
+          unzip -q "$NDK_ZIP"
+          mv "$NDK_VERSION" "$ANDROID_NDK_HOME"
 
       - name: Make build.sh executable
-        run: cd build-proot-android && 
-             chmod +x build.sh
+        run: chmod +x scripts/build.sh
 
-      - name: Build libproot.so for Android ABIs
+      - name: Build static libproot.so for Android arm64 (from proot-me)
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_HOME}"
           export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          # Set required ABIs (customize if needed)
-          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-            cd build-proot-android && ./build.sh $abi
-          done
+          export LINK_STATIC=1
+          # Override PRoot source to official proot-me
+          export P_ROOT_REPO_URL="https://github.com/proot-me/proot.git"
+          export P_ROOT_REPO_REV="master"   # Change to a tag/commit if desired
+          export API=28    # Change to desired API level
+          scripts/build.sh arm64-v8a
 
-      - name: Upload libproot.so artifacts
+      - name: Upload static libproot.so artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libproot-so
-          path: |
-            libs/**/libproot.so
-
+          name: libproot-so-arm64-static
+          path: libs/arm64-v8a/libproot.so
