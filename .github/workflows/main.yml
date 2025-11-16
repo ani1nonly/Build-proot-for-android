@@ -50,7 +50,7 @@ jobs:
         
 
       - name: Make build.sh executable
-        run: cd build-proot-android
+        run: cd build-proot-android && 
              chmod +x build.sh
 
       - name: Build libproot.so for Android ABIs
