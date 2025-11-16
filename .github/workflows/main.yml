@@ -43,16 +43,17 @@ jobs:
           wget -q $NDK_URL
           unzip -q $NDK_ZIP
           mv $NDK_VERSION $ANDROID_NDK_HOME
-        # Expose NDK to PATH in this job:
-          
-      - name: Make build.sh executable and build libproot.so for Android ABIs
+
+      - name: Make build.sh executable
+        run: chmod +x scripts/build.sh
+
+      - name: Build libproot.so for Android ABIs
         run: |
-          chmod +x ./build.sh
           export ANDROID_NDK_HOME="${ANDROID_NDK_HOME}"
           export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          # Set required ABIs (add or remove as needed)
+          # Set required ABIs (customize if needed)
           for abi in armeabi-v7a arm64-v8a x86 x86_64; do
-            ./build.sh $abi
+            scripts/build.sh $abi
           done
 
       - name: Upload libproot.so artifacts
@@ -61,3 +62,4 @@ jobs:
           name: libproot-so
           path: |
             libs/**/libproot.so
+
