@@ -1,63 +1,66 @@
-name: Build Static PROOT for Android arm64
+name: Build libproot.so for Android
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    paths:
+      - '**.sh'
+      - '**.c'
+      - '**.h'
+      - '**.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    env:
-      ANDROID_NDK_HOME: ${{ github.workspace }}/android-ndk
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Set up Python 3
-        uses: actions/setup-python@v5
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
         with:
-          python-version: '3.x'
+          ndk-version: r26d
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
-
-      - name: Install build essentials
+      - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential wget curl unzip
+          sudo apt-get install -y build-essential git wget python3
 
-      - name: Download Android NDK r23b
+      - name: Clone proot-me/proot
         run: |
-          NDK_VERSION="android-ndk-r23b"
-          NDK_ZIP="${NDK_VERSION}-linux.zip"
-          NDK_URL="https://dl.google.com/android/repository/${NDK_ZIP}"
-          wget -q "$NDK_URL"
-          unzip -q "$NDK_ZIP"
-          mv "$NDK_VERSION" "$ANDROID_NDK_HOME"
+          git clone https://github.com/proot-me/proot.git proot-upstream
+          # Optionally checkout a specific commit/tag if you want
 
-      - name: Make build.sh executable
-        run: chmod +x scripts/build.sh
-
-      - name: Build static libproot.so for Android arm64 (from proot-me)
+      - name: Prepare build-proot-android scripts
         run: |
+          git clone https://github.com/green-green-avk/build-proot-android.git
+          # Replace the proot sources with fresh clone
+          rm -rf build-proot-android/proot
+          cp -r proot-upstream build-proot-android/proot
+
+      - name: Build multi-ABI, multi-API libproot.so
+        run: |
+          cd build-proot-android
           export ANDROID_NDK_HOME="${ANDROID_NDK_HOME}"
           export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
-          export LINK_STATIC=1
-          # Override PRoot source to official proot-me
-          export P_ROOT_REPO_URL="https://github.com/proot-me/proot.git"
-          export P_ROOT_REPO_REV="master"   # Change to a tag/commit if desired
-          export API=28    # Change to desired API level
-          scripts/build.sh arm64-v8a
+          for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+            for api in 28 29 30; do
+              API=$api scripts/build.sh $abi
+              case $api in
+                28)
+                  mv libs/$abi/libproot.so libs/$abi/lib_proot.so
+                  ;;
+                29)
+                  mv libs/$abi/libproot.so libs/$abi/lib_proot.a10.so
+                  ;;
+                30)
+                  mv libs/$abi/libproot.so libs/$abi/lib_proot.a11.so
+                  ;;
+              esac
+            done
+          done
 
-      - name: Upload static libproot.so artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
         with:
-          name: libproot-so-arm64-static
-          path: libs/arm64-v8a/libproot.so
+          name: libproot-android-all
+          path: build-proot-android/libs/
