@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       arch:
-        description: 'Target architecture (aarch64 or arm)'
+        description: 'Target architecture (aarch64 | arm | x86_64)'
         required: true
         default: 'aarch64'
       proot_repo:
@@ -19,30 +19,46 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      artifact-path: ${{ steps.upload.outputs.artifact-path }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Ensure scripts are executable
-        run: |
-          chmod +x scripts/*.sh || true
+        run: chmod +x scripts/*.sh || true
 
-      - name: Run musl-cross build in Docker (builds libproot.so)
-        # using messense/musl-cross which provides aarch64-musl cross toolchain
+      - name: Select correct musl-cross Docker image
+        id: image
         run: |
-          ARCH=${{ github.event.inputs.arch }}
-          PROOT_REPO="${{ github.event.inputs.proot_repo }}"
-          PROOT_REF="${{ github.event.inputs.proot_ref }}"
-          docker run --rm -v "$PWD":/work -w /work messense/musl-cross:$([ "$ARCH" = "aarch64" ] && echo "aarch64" || echo "x86_64") \
-            bash -lc "scripts/build-musl-static.sh --arch $ARCH --proot-repo '$PROOT_REPO' --proot-ref '$PROOT_REF'"
+          case "${{ github.event.inputs.arch }}" in
+            aarch64)
+              echo "image=messense/musl-cross:aarch64-musl" >> $GITHUB_OUTPUT
+              ;;
+            arm)
+              echo "image=messense/musl-cross:armv7-musleabihf" >> $GITHUB_OUTPUT
+              ;;
+            x86_64)
+              echo "image=messense/musl-cross:x86_64-musl" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Unsupported arch: ${{ github.event.inputs.arch }}"
+              exit 1
+              ;;
+          esac
 
-      - name: Upload libproot.so as artifact
+      - name: Build static libproot.so (musl)
+        run: |
+          docker run --rm \
+            -v "$PWD":/work \
+            -w /work \
+            ${{ steps.image.outputs.image }} \
+            bash -lc "scripts/build-musl-static.sh \
+              --arch '${{ github.event.inputs.arch }}' \
+              --proot-repo '${{ github.event.inputs.proot_repo }}' \
+              --proot-ref '${{ github.event.inputs.proot_ref }}'"
+
+      - name: Upload libproot.so
         uses: actions/upload-artifact@v4
         with:
           name: libproot-${{ github.event.inputs.arch }}
-          path: |
-            build/${{ github.event.inputs.arch }}/libproot.so
+          path: build/${{ github.event.inputs.arch }}/libproot.so
