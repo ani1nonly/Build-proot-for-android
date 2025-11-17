@@ -1,0 +1,48 @@
+name: Build static libproot (musl)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture (aarch64 or arm)'
+        required: true
+        default: 'aarch64'
+      proot_repo:
+        description: 'Proot repo to use'
+        required: true
+        default: 'https://github.com/CypherpunkArmory/proot.git'
+      proot_ref:
+        description: 'Branch / tag / commit for proot'
+        required: true
+        default: 'master'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-path: ${{ steps.upload.outputs.artifact-path }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure scripts are executable
+        run: |
+          chmod +x scripts/*.sh || true
+
+      - name: Run musl-cross build in Docker (builds libproot.so)
+        # using messense/musl-cross which provides aarch64-musl cross toolchain
+        run: |
+          ARCH=${{ github.event.inputs.arch }}
+          PROOT_REPO="${{ github.event.inputs.proot_repo }}"
+          PROOT_REF="${{ github.event.inputs.proot_ref }}"
+          docker run --rm -v "$PWD":/work -w /work messense/musl-cross:$([ "$ARCH" = "aarch64" ] && echo "aarch64" || echo "x86_64") \
+            bash -lc "scripts/build-musl-static.sh --arch $ARCH --proot-repo '$PROOT_REPO' --proot-ref '$PROOT_REF'"
+
+      - name: Upload libproot.so as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libproot-${{ github.event.inputs.arch }}
+          path: |
+            build/${{ github.event.inputs.arch }}/libproot.so
