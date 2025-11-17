@@ -1,64 +1,93 @@
-name: Build static libproot (musl)
+name: Build libproot.so ARM64
 
 on:
   workflow_dispatch:
-    inputs:
-      arch:
-        description: 'Target architecture (aarch64 | arm | x86_64)'
-        required: true
-        default: 'aarch64'
-      proot_repo:
-        description: 'Proot repo to use'
-        required: true
-        default: 'https://github.com/CypherpunkArmory/proot.git'
-      proot_ref:
-        description: 'Branch / tag / commit for proot'
-        required: true
-        default: 'master'
 
 jobs:
-  build:
+  build-proot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout scripts
+      uses: actions/checkout@v4
 
-      - name: Ensure scripts are executable
-        run: chmod +x scripts/*.sh || true
+    - name: Create build scripts
+      run: |
+        mkdir build
+        cat > build/Dockerfile << 'EOF'
+        FROM messense/musl-cross:aarch64
 
-      - name: Select correct musl-cross Docker image
-        id: image
-        run: |
-          case "${{ github.event.inputs.arch }}" in
-            aarch64)
-              echo "image=messense/musl-cross:aarch64-musl" >> $GITHUB_OUTPUT
-              ;;
-            arm)
-              echo "image=messense/musl-cross:armv7-musleabihf" >> $GITHUB_OUTPUT
-              ;;
-            x86_64)
-              echo "image=messense/musl-cross:x86_64-musl" >> $GITHUB_OUTPUT
-              ;;
-            *)
-              echo "Unsupported arch: ${{ github.event.inputs.arch }}"
-              exit 1
-              ;;
-          esac
+        RUN apk add --no-cache \
+            build-base git automake autoconf libtool bash patch
 
-      - name: Build static libproot.so (musl)
-        run: |
-          docker run --rm \
-            -v "$PWD":/work \
-            -w /work \
-            ${{ steps.image.outputs.image }} \
-            bash -lc "scripts/build-musl-static.sh \
-              --arch '${{ github.event.inputs.arch }}' \
-              --proot-repo '${{ github.event.inputs.proot_repo }}' \
-              --proot-ref '${{ github.event.inputs.proot_ref }}'"
+        WORKDIR /build
+        COPY build-proot.sh /build/build-proot.sh
+        COPY proot-android.patch /build/proot-android.patch
 
-      - name: Upload libproot.so
-        uses: actions/upload-artifact@v4
-        with:
-          name: libproot-${{ github.event.inputs.arch }}
-          path: build/${{ github.event.inputs.arch }}/libproot.so
+        ENTRYPOINT ["/build/build-proot.sh"]
+        EOF
+
+        cat > build/build-proot.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        export TARGET=aarch64-linux-musl
+        export CC=${TARGET}-gcc
+        export AR=${TARGET}-ar
+        export RANLIB=${TARGET}-ranlib
+        export STRIP=${TARGET}-strip
+
+        echo "Cloning PRoot…"
+        git clone https://github.com/proot-me/proot.git
+        cd proot
+
+        echo "Applying Android patch…"
+        patch -p1 < /build/proot-android.patch
+
+        echo "Building PRoot static libs…"
+        make -j$(nproc) \
+          CC="$CC -static -fPIC" \
+          LD="$CC -static" \
+          CFLAGS="-O2 -static -fPIC -DPROOT_NO_SECCOMP" \
+          LDFLAGS="-static"
+
+        echo "Creating libproot.so…"
+        ${CC} -shared -static -o libproot.so \
+          -Wl,--whole-archive src/loader/libvfs.a src/extension/*.a \
+          -Wl,--no-whole-archive -fPIC
+
+        $STRIP libproot.so
+
+        mkdir -p /out
+        cp libproot.so /out/
+        EOF
+
+        cat > build/proot-android.patch << 'EOF'
+        diff --git a/src/loader/loader.c b/src/loader/loader.c
+        index 3a12cd9..abcd111 100644
+        --- a/src/loader/loader.c
+        +++ b/src/loader/loader.c
+        @@ -210,7 +210,7 @@ static const char *const system_paths[] = {
+        -    "/lib",
+        +    "/system/lib",
+        -    "/usr/lib",
+        +    "/system/lib64",
+             NULL,
+        };
+        EOF
+
+        chmod +x build/build-proot.sh
+
+    - name: Build Docker image
+      run: docker build -t proot-builder ./build
+
+    - name: Run build
+      run: |
+        mkdir output
+        docker run --rm -v ${{ github.workspace }}/output:/out proot-builder
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: libproot-arm64
+        path: output/libproot.so
